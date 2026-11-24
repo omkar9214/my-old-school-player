@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Old School Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: a music stand — sticky transport bar over a paper score; the score stays paper-white in both themes. */
+:root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --ink: #17202b;
+  --muted: #5d6877;
+  --line: #d5dae1;
+  --accent: #b5741c;          /* brass */
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(181, 116, 28, 0.16);
+  --paper: #fdfcf8;
+  --off: #a7afba;
+  --font-ui: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161c; --panel: #1b222b; --ink: #e7ebf0; --muted: #9aa5b3; --line: #2d3742;
+    --accent: #e0a14a; --accent-ink: #1a1206; --accent-soft: rgba(224, 161, 74, 0.2);
+    --paper: #fdfcf8; --off: #5a6573; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c; --panel: #1b222b; --ink: #e7ebf0; --muted: #9aa5b3; --line: #2d3742;
+  --accent: #e0a14a; --accent-ink: #1a1206; --accent-soft: rgba(224, 161, 74, 0.2);
+  --paper: #fdfcf8; --off: #5a6573; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; font-size: 14px; background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--panel); }
+.bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 10px;
+}
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+h1 { font-family: var(--font-ui); font-weight: 700; font-size: 1.35rem; margin: 0; letter-spacing: .01em; }
+.where { font-family: var(--font-ui); font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
+.where b { color: var(--ink); }
+.spacer { flex: 1 1 auto; }
+button, select {
+  font: 600 1rem var(--font-ui); letter-spacing: .02em; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  min-height: 40px; padding: 0 12px; cursor: pointer;
+}
+button:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+.play { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); min-width: 92px; font-size: 1.1rem; }
+.label { font: 600 .78rem var(--font-ui); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.chip { min-height: 34px; padding: 0 10px; border-radius: 999px; font-size: .95rem; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.chip.muted { color: var(--off); text-decoration: line-through; background: transparent; }
+.sections { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.sec {
+  flex: 0 0 auto; min-height: 32px; border-radius: 4px; border: 1.5px solid var(--ink);
+  background: transparent; font-size: .9rem; padding: 0 8px; white-space: nowrap;
+}
+.sec[aria-current="true"] { background: var(--ink); color: var(--panel); }
+.sec small { font-weight: 500; opacity: .7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.progress { position: relative; height: 6px; background: var(--line); border-radius: 3px; cursor: pointer; }
+.progress i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); border-radius: 3px; }
+main {
+  padding-block: 14px 60px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.sheet { background: var(--paper); color: #111; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.12); overflow-x: auto; position: relative; min-height: 50vh; }
+#osmd { position: relative; }
+.status { padding: 40px 20px; text-align: center; font-family: var(--font-ui); font-size: 1.1rem; color: #4a5563; }
+.hl { position: absolute; pointer-events: none; background: rgba(181,116,28,.14); border: 2px solid rgba(181,116,28,.55); border-radius: 4px; display: none; }
+.ph { position: absolute; pointer-events: none; width: 3px; margin-left: -1px; background: #b5741c; border-radius: 2px; display: none; }
+.hint { font-size: .85rem; color: var(--muted); margin: 10px 2px 0; }
+@media (max-width: 640px) { h1 { font-size: 1.15rem; } .play { min-width: 76px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="row">
+    <h1>My Old School</h1>
+    <span class="where" id="where">Bar <b>1</b> · 0:00 / 5:47</span>
+    <span class="spacer"></span>
+    <button id="restart" title="Back to the start" disabled>⏮ Start</button>
+    <button id="play" class="play" disabled>Loading…</button>
+  </div>
+  <div class="progress" id="progress" aria-label="Song position"><i id="fill"></i></div>
+  <div class="row">
+    <div class="group">
+      <label class="label" for="view">Show</label>
+      <select id="view">
+        <option value="all">Full score</option>
+        <option value="0">Tara · Keys (horns high)</option>
+        <option value="1">Omkar · Guitar (horns mid)</option>
+        <option value="2">Aakshit · Guitar (horns low)</option>
+        <option value="3">Rhythm Guitar</option>
+        <option value="4">Piano</option>
+        <option value="5">Bass</option>
+      </select>
+    </div>
+    <div class="group">
+      <label class="label" for="speed">Speed</label>
+      <select id="speed">
+        <option value="1">100% · 125 bpm</option>
+        <option value="0.9">90% · 113 bpm</option>
+        <option value="0.8">80% · 100 bpm</option>
+        <option value="0.7">70% · 88 bpm</option>
+        <option value="0.6">60% · 75 bpm</option>
+        <option value="0.5">50% · 63 bpm</option>
+      </select>
+    </div>
+    <div class="group">
+      <span class="label">Zoom</span>
+      <button id="zout" aria-label="Smaller notes">−</button>
+      <button id="zin" aria-label="Bigger notes">+</button>
+    </div>
+    <div class="group">
+      <button id="follow" class="chip" aria-pressed="true">Follow</button>
+      <button id="loop" class="chip" aria-pressed="false">Loop section</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="label">Hear</span>
+    <div class="group" id="mixer"></div>
+  </div>
+  <nav class="sections" id="sections" aria-label="Jump to section"></nav>
+</header>
+
+<main>
+  <div class="sheet"><div id="osmd"><div class="status" id="status">Loading the score…</div></div></div>
+  <p class="hint">Tap any bar to play from there. Tap a name under “Hear” to mute or unmute that part.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+<script>
+(() => {
+  const BPM = 125, BAR = 4 * 60 / BPM;           // seconds per bar at full speed
+  const PARTS = [
+    { name: 'Tara', file: 'audio/tara.mp3' },
+    { name: 'Omkar', file: 'audio/omkar.mp3' },
+    { name: 'Aakshit', file: 'audio/aakshit.mp3' },
+    { name: 'Rhythm Gtr', file: 'audio/rhythm-guitar.mp3' },
+    { name: 'Piano', file: 'audio/piano.mp3' },
+    { name: 'Bass', file: 'audio/bass.mp3' },
+  ];
+  // Bars in the order they are played (repeats unrolled), matching the MuseScore audio.
+  const ORDER = [];
+  const run = (a, b) => { for (let i = a; i <= b; i++) ORDER.push(i); };
+  run(1, 40); ORDER.push(37, 38, 39, 41);           // bridge repeat, 1st/2nd ending
+  run(42, 138);
+  for (let i = 0; i < 4; i++) ORDER.push(139, 140);  // coda vamp x4
+  run(141, 152); run(141, 152);                      // outro repeat
+  run(153, 158);
+  const SECTIONS = [
+    ['Intro', 1], ['Verse 1', 5], ['Chorus', 21], ['Bridge', 37], ['Verse 2', 42],
+    ['Chorus', 58], ['Guitar solo', 76], ['Horn soli', 91], ['Verse 4', 109],
+    ['Chorus', 125], ['Coda', 139], ['Outro', 141], ['Ending', 153],
+  ].map(([label, bar]) => ({ label, bar, idx: ORDER.indexOf(bar) }));
+  SECTIONS.forEach((s, i) => { s.end = i + 1 < SECTIONS.length ? SECTIONS[i + 1].idx : ORDER.length; });
+
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('mos.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('mos.' + k, JSON.stringify(v)); } catch {} },
+  };
+
+  // ---------- audio ----------
+  const audios = PARTS.map(p => { const a = new Audio(); a.preload = 'auto'; a.src = p.file; a.preservesPitch = true; a.webkitPreservesPitch = true; return a; });
+  const master = audios[0];
+  let muted = store.get('muted', [false, false, false, false, false, false]);
+  let playing = false, rate = +store.get('rate', 1), pos = 0;   // pos = song position while stopped
+  const total = ORDER.length * BAR;
+  const now = () => (playing ? master.currentTime : pos);
+
+  function applyMutes() { audios.forEach((a, i) => { a.muted = !!muted[i]; }); renderMixer(); }
+  function setRate(r) { rate = r; audios.forEach(a => { a.playbackRate = r; }); store.set('rate', r); }
+  function setTime(a, t) {
+    if (a.readyState >= 1) { try { a.currentTime = t; } catch {} }
+    else a.addEventListener('loadedmetadata', () => { try { a.currentTime = t; } catch {} }, { once: true });
+  }
+  function seek(t) {
+    pos = Math.max(0, Math.min(total - 0.05, t));
+    audios.forEach(a => setTime(a, pos));
+    tick(true);
+  }
+  async function play() {
+    audios.forEach(a => { setTime(a, pos); a.playbackRate = rate; });
+    try { await Promise.all(audios.map(a => a.play())); playing = true; }
+    catch (e) { playing = false; audios.forEach(a => a.pause()); $('play').textContent = '▶ Tap again'; return; }
+    updatePlayBtn();
+  }
+  function pause() { if (playing) pos = master.currentTime; audios.forEach(a => a.pause()); playing = false; updatePlayBtn(); }
+  function updatePlayBtn() { $('play').textContent = playing ? '❚❚ Pause' : '▶ Play'; }
+  // keep all tracks locked to the first one
+  setInterval(() => {
+    if (!playing) return;
+    const t = master.currentTime;
+    audios.forEach((a, i) => { if (i && Math.abs(a.currentTime - t) > 0.06) a.currentTime = t; });
+  }, 400);
+  master.addEventListener("ended", () => { playing = false; updatePlayBtn(); seek(0); });
+
+  // ---------- mixer ----------
+  function renderMixer() {
+    const box = $('mixer'); box.innerHTML = '';
+    PARTS.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.className = 'chip' + (muted[i] ? ' muted' : ''); b.type = 'button';
+      b.textContent = p.name; b.setAttribute('aria-pressed', String(!muted[i]));
+      b.title = muted[i] ? 'Muted: tap to hear ' + p.name : 'Tap to mute ' + p.name;
+      b.onclick = () => { muted[i] = !muted[i]; store.set('muted', muted); applyMutes(); };
+      box.appendChild(b);
+    });
+  }
+
+  // ---------- score ----------
+  const osmdHost = $('osmd');
+  let osmd, boxes = [], hl, ph, zoom = +store.get('zoom', window.innerWidth < 700 ? 0.6 : 0.8);
+  function setStatus(msg) { const s = $('status'); if (s) s.textContent = msg; }
+
+  async function loadScore() {
+    osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(osmdHost, {
+      backend: 'svg', autoResize: false, drawTitle: false, drawSubtitle: false,
+      drawComposer: false, drawLyricist: false, drawCredits: false, drawPartNames: true,
+      drawPartAbbreviations: true, followCursor: false,
+    });
+    window.__osmd = osmd;
+    try { osmd.EngravingRules.RenderMultipleRestMeasures = false; } catch {}
+    const xml = await (await fetch('score.xml')).text();
+    await osmd.load(xml);
+    $('status')?.remove();
+    const v = store.get('view', 'all');
+    $('view').value = v;
+    showView(v);
+  }
+
+  function showView(v) {
+    osmd.Sheet.Instruments.forEach((ins, i) => { ins.Visible = (v === 'all' || String(i) === v); });
+    osmd.zoom = zoom;
+    osmd.render();
+    measureBoxes();
+    tick(true);
+  }
+
+  function measureBoxes() {
+    const page = osmdHost.querySelector('[id^="osmdCanvasPage"]') || osmdHost;
+    page.style.position = 'relative';
+    hl = document.createElement('div'); hl.className = 'hl';
+    ph = document.createElement('div'); ph.className = 'ph';
+    page.appendChild(hl); page.appendChild(ph);
+    const u = 10 * osmd.zoom;
+    boxes = osmd.GraphicSheet.MeasureList.map(staves => {
+      const ms = (staves || []).filter(g => g && g.ParentStaff?.ParentInstrument?.Visible !== false);
+      if (!ms.length) return null;
+      const ys = ms.map(g => g.PositionAndShape.AbsolutePosition.y);
+      const top = Math.min(...ys), bottom = Math.max(...ys) + 4;   // a staff is 4 units tall
+      const f = ms[0].PositionAndShape;
+      return { x: f.AbsolutePosition.x * u, w: f.Size.width * u, y: (top - 2) * u, h: (bottom - top + 4) * u };
+    });
+  }
+
+  // tap a bar to play from it
+  osmdHost.addEventListener('click', ev => {
+    if (!boxes.length) return;
+    const page = osmdHost.querySelector('[id^="osmdCanvasPage"]') || osmdHost;
+    const r = page.getBoundingClientRect();
+    const x = ev.clientX - r.left, y = ev.clientY - r.top;
+    const m = boxes.findIndex(b => b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    if (m < 0) return;
+    const bar = m + 1, cur = currentIdx();
+    let idx = ORDER.findIndex((n, i) => n === bar && i >= cur);
+    if (idx < 0) idx = ORDER.indexOf(bar);
+    seek(idx * BAR);
+  });
+
+  function currentIdx() { return Math.min(ORDER.length - 1, Math.floor(now() / BAR + 1e-6)); }
+
+  // ---------- playhead ----------
+  let lastIdx = -1, follow = store.get('follow', true), loop = false, userScrollAt = 0;
+  window.addEventListener('wheel', () => { userScrollAt = Date.now(); }, { passive: true });
+  window.addEventListener('touchmove', () => { userScrollAt = Date.now(); }, { passive: true });
+
+  function fmt(s) { s = Math.max(0, s); return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0'); }
+  function sectionAt(idx) { let s = SECTIONS[0]; for (const x of SECTIONS) if (x.idx <= idx) s = x; return s; }
+
+  function tick(force) {
+    const t = now() || 0;
+    let idx = currentIdx();
+    if (loop && playing) {
+      const s = sectionAt(Math.max(0, lastIdx));
+      if (idx >= s.end) { seek(s.idx * BAR); return; }
+    }
+    const frac = t / BAR - idx;
+    const bar = ORDER[idx];
+    const pass = ORDER.slice(0, idx + 1).filter(n => n === bar).length;
+    const totalPasses = ORDER.filter(n => n === bar).length;
+    $('where').innerHTML = `Bar <b>${bar}</b>${totalPasses > 1 ? ` · time ${pass} of ${totalPasses}` : ''} · ${fmt(t)} / ${fmt(total)}`;
+    $('fill').style.width = (100 * t / total) + '%';
+    const b = boxes[bar - 1];
+    if (b && hl) {
+      hl.style.display = ph.style.display = 'block';
+      Object.assign(hl.style, { left: b.x + 'px', top: b.y + 'px', width: b.w + 'px', height: b.h + 'px' });
+      Object.assign(ph.style, { left: (b.x + b.w * Math.min(1, Math.max(0, frac))) + 'px', top: b.y + 'px', height: b.h + 'px' });
+      if ((idx !== lastIdx || force) && follow && Date.now() - userScrollAt > 2500) {
+        const r = hl.getBoundingClientRect();
+        const head = document.querySelector('.bar').getBoundingClientRect().bottom;
+        const vh = window.innerHeight;
+        if (r.top < head + 10 || r.bottom > vh - 20) {
+          window.scrollTo({ top: window.scrollY + r.top - head - vh * 0.12, behavior: force ? 'auto' : 'smooth' });
+        }
+        const sh = document.querySelector('.sheet');
+        const sr = sh.getBoundingClientRect();
+        if (r.left < sr.left || r.right > sr.right) sh.scrollLeft += r.left - sr.left - 40;
+      }
+    }
+    if (idx !== lastIdx || force) {
+      const s = sectionAt(idx);
+      document.querySelectorAll('.sec').forEach(el => el.setAttribute('aria-current', String(+el.dataset.idx === s.idx)));
+    }
+    lastIdx = idx;
+  }
+  function loopFrame() { if (playing) tick(false); requestAnimationFrame(loopFrame); }
+  requestAnimationFrame(loopFrame);
+
+  // ---------- controls ----------
+  $('play').onclick = () => (playing ? pause() : play());
+  $('restart').onclick = () => seek(0);
+  $('speed').value = String(rate); $('speed').onchange = e => setRate(+e.target.value);
+  $('view').onchange = e => { store.set('view', e.target.value); showView(e.target.value); };
+  $('zin').onclick = () => { zoom = Math.min(1.6, +(zoom + 0.1).toFixed(2)); store.set('zoom', zoom); showView($('view').value); };
+  $('zout').onclick = () => { zoom = Math.max(0.4, +(zoom - 0.1).toFixed(2)); store.set('zoom', zoom); showView($('view').value); };
+  const fb = $('follow'); fb.setAttribute('aria-pressed', String(follow));
+  fb.onclick = () => { follow = !follow; store.set('follow', follow); fb.setAttribute('aria-pressed', String(follow)); if (follow) { userScrollAt = 0; tick(true); } };
+  const lb = $('loop');
+  lb.onclick = () => { loop = !loop; lb.setAttribute('aria-pressed', String(loop)); };
+  $('progress').onclick = e => { const r = e.currentTarget.getBoundingClientRect(); seek(Math.floor((e.clientX - r.left) / r.width * ORDER.length) * BAR); };
+  document.addEventListener('keydown', e => { if (e.code === 'Space' && e.target.tagName !== 'SELECT') { e.preventDefault(); $('play').click(); } });
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => osmd && showView($('view').value), 300); });
+
+  const nav = $('sections');
+  SECTIONS.forEach(s => {
+    const b = document.createElement('button'); b.className = 'sec'; b.type = 'button'; b.dataset.idx = s.idx;
+    b.innerHTML = `${s.label}<small>${s.bar}</small>`;
+    b.onclick = () => seek(s.idx * BAR);
+    nav.appendChild(b);
+  });
+
+  applyMutes(); setRate(rate);
+  const ready = () => { $('play').disabled = false; $('restart').disabled = false; updatePlayBtn(); };
+  loadScore().then(ready).catch(err => { console.error(err); setStatus('The score could not load. Reload the page to try again.'); });
+})();
+</script>
+</body>
+</html>
