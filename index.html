@@ -63,7 +63,6 @@ button:disabled { opacity: .5; cursor: default; }
 .group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .chip { min-height: 34px; padding: 0 10px; border-radius: 999px; font-size: .95rem; }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
-.chip.muted { color: var(--off); text-decoration: line-through; background: transparent; }
 .sections { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
 .sec {
   flex: 0 0 auto; min-height: 32px; border-radius: 4px; border: 1.5px solid var(--ink);
@@ -133,29 +132,41 @@ main {
     </div>
   </div>
   <div class="row">
-    <span class="label">Hear</span>
-    <div class="group" id="mixer"></div>
+    <div class="group">
+      <label class="label" for="mix">Hear</label>
+      <select id="mix">
+        <option value="full">Full band</option>
+        <optgroup label="Play along: band without…">
+          <option value="without-tara">Without Tara</option>
+          <option value="without-omkar">Without Omkar</option>
+          <option value="without-aakshit">Without Aakshit</option>
+          <option value="without-rhythm-guitar">Without Rhythm Guitar</option>
+          <option value="without-piano">Without Piano</option>
+          <option value="without-bass">Without Bass</option>
+        </optgroup>
+        <optgroup label="Learn: one part only">
+          <option value="tara">Only Tara</option>
+          <option value="omkar">Only Omkar</option>
+          <option value="aakshit">Only Aakshit</option>
+          <option value="rhythm-guitar">Only Rhythm Guitar</option>
+          <option value="piano">Only Piano</option>
+          <option value="bass">Only Bass</option>
+        </optgroup>
+      </select>
+    </div>
   </div>
   <nav class="sections" id="sections" aria-label="Jump to section"></nav>
 </header>
 
 <main>
   <div class="sheet"><div id="osmd"><div class="status" id="status">Loading the score…</div></div></div>
-  <p class="hint">Tap any bar to play from there. Tap a name under “Hear” to mute or unmute that part.</p>
+  <p class="hint">Tap any bar to play from there. Use “Hear” to play along with the band minus your part, or to learn one part on its own.</p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script>
 (() => {
   const BPM = 125, BAR = 4 * 60 / BPM;           // seconds per bar at full speed
-  const PARTS = [
-    { name: 'Tara', file: 'audio/tara.mp3' },
-    { name: 'Omkar', file: 'audio/omkar.mp3' },
-    { name: 'Aakshit', file: 'audio/aakshit.mp3' },
-    { name: 'Rhythm Gtr', file: 'audio/rhythm-guitar.mp3' },
-    { name: 'Piano', file: 'audio/piano.mp3' },
-    { name: 'Bass', file: 'audio/bass.mp3' },
-  ];
   // Bars in the order they are played (repeats unrolled), matching the MuseScore audio.
   const ORDER = [];
   const run = (a, b) => { for (let i = a; i <= b; i++) ORDER.push(i); };
@@ -177,53 +188,58 @@ main {
     set(k, v) { try { localStorage.setItem('mos.' + k, JSON.stringify(v)); } catch {} },
   };
 
-  // ---------- audio ----------
-  const audios = PARTS.map(p => { const a = new Audio(); a.preload = 'auto'; a.src = p.file; a.preservesPitch = true; a.webkitPreservesPitch = true; return a; });
-  const master = audios[0];
-  let muted = store.get('muted', [false, false, false, false, false, false]);
+  // ---------- audio: ONE player, pre-mixed tracks (iPad browsers can't keep several players in sync) ----------
+  const audio = document.createElement('audio');
+  audio.preload = 'auto'; audio.setAttribute('playsinline', ''); audio.preservesPitch = true; audio.webkitPreservesPitch = true;
+  document.body.appendChild(audio);
+  let mix = store.get('mix', 'full');
+  if (![...document.querySelectorAll('#mix option')].some(o => o.value === mix)) mix = 'full';
   let playing = false, rate = +store.get('rate', 1), pos = 0;   // pos = song position while stopped
   const total = ORDER.length * BAR;
-  const now = () => (playing ? master.currentTime : pos);
+  // The audio clock on iPads updates in coarse steps; glide between updates so the playhead moves smoothly.
+  let clockA = 0, clockP = 0;
+  function now() {
+    if (!playing) return pos;
+    const a = audio.currentTime, p = performance.now();
+    if (a !== clockA) { clockA = a; clockP = p; return a; }
+    return Math.min(clockA + (p - clockP) / 1000 * rate, clockA + 0.5);
+  }
 
-  function applyMutes() { audios.forEach((a, i) => { a.muted = !!muted[i]; }); renderMixer(); }
-  function setRate(r) { rate = r; audios.forEach(a => { a.playbackRate = r; }); store.set('rate', r); }
-  function setTime(a, t) {
-    if (a.readyState >= 1) { try { a.currentTime = t; } catch {} }
-    else a.addEventListener('loadedmetadata', () => { try { a.currentTime = t; } catch {} }, { once: true });
+  function setRate(r) { rate = r; audio.playbackRate = r; store.set('rate', r); }
+  function setTime(t) {
+    if (audio.readyState >= 1) { try { audio.currentTime = t; } catch {} }
+    else audio.addEventListener('loadedmetadata', () => { try { audio.currentTime = t; } catch {} }, { once: true });
+  }
+  function loadMix(key) {
+    mix = key; store.set('mix', key);
+    audio.src = 'audio/' + key + '.mp3';
+    audio.playbackRate = rate;
+    setTime(pos);
   }
   function seek(t) {
     pos = Math.max(0, Math.min(total - 0.05, t));
-    audios.forEach(a => setTime(a, pos));
+    setTime(pos); clockA = -1;
     tick(true);
   }
   async function play() {
-    audios.forEach(a => { setTime(a, pos); a.playbackRate = rate; });
-    try { await Promise.all(audios.map(a => a.play())); playing = true; }
-    catch (e) { playing = false; audios.forEach(a => a.pause()); $('play').textContent = '▶ Tap again'; return; }
+    if (Math.abs(audio.currentTime - pos) > 0.05) setTime(pos);
+    audio.playbackRate = rate;
+    try { await audio.play(); playing = true; clockA = -1; }
+    catch (e) { playing = false; audio.pause(); $('play').textContent = '▶ Tap again'; return; }
     updatePlayBtn();
   }
-  function pause() { if (playing) pos = master.currentTime; audios.forEach(a => a.pause()); playing = false; updatePlayBtn(); }
+  function pause() { if (playing) pos = audio.currentTime; audio.pause(); playing = false; updatePlayBtn(); }
   function updatePlayBtn() { $('play').textContent = playing ? '❚❚ Pause' : '▶ Play'; }
-  // keep all tracks locked to the first one
-  setInterval(() => {
-    if (!playing) return;
-    const t = master.currentTime;
-    audios.forEach((a, i) => { if (i && Math.abs(a.currentTime - t) > 0.06) a.currentTime = t; });
-  }, 400);
-  master.addEventListener("ended", () => { playing = false; updatePlayBtn(); seek(0); });
+  audio.addEventListener('ended', () => { playing = false; updatePlayBtn(); seek(0); });
+  audio.addEventListener('waiting', () => { clockA = -1; });
 
-  // ---------- mixer ----------
-  function renderMixer() {
-    const box = $('mixer'); box.innerHTML = '';
-    PARTS.forEach((p, i) => {
-      const b = document.createElement('button');
-      b.className = 'chip' + (muted[i] ? ' muted' : ''); b.type = 'button';
-      b.textContent = p.name; b.setAttribute('aria-pressed', String(!muted[i]));
-      b.title = muted[i] ? 'Muted: tap to hear ' + p.name : 'Tap to mute ' + p.name;
-      b.onclick = () => { muted[i] = !muted[i]; store.set('muted', muted); applyMutes(); };
-      box.appendChild(b);
-    });
-  }
+  $('mix').value = mix;
+  $('mix').onchange = e => {
+    const wasPlaying = playing;
+    if (playing) pause();
+    loadMix(e.target.value);
+    if (wasPlaying) play();
+  };
 
   // ---------- score ----------
   const osmdHost = $('osmd');
@@ -357,7 +373,7 @@ main {
     nav.appendChild(b);
   });
 
-  applyMutes(); setRate(rate);
+  loadMix(mix); setRate(rate);
   const ready = () => { $('play').disabled = false; $('restart').disabled = false; updatePlayBtn(); };
   loadScore().then(ready).catch(err => { console.error(err); setStatus('The score could not load. Reload the page to try again.'); });
 })();
